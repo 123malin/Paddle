@@ -37,7 +37,7 @@ typedef struct PD_PaddleBuf PD_PaddleBuf;
 typedef struct PD_AnalysisConfig PD_AnalysisConfig;
 
 typedef struct PD_ZeroCopyData {
-  char* name = new char[50];
+  char* name;
   void* data;
   PD_DataType dtype;
   int* shape;
@@ -104,7 +104,7 @@ PADDLE_CAPI_EXPORT extern bool PD_PredictorRun(const PD_AnalysisConfig* config,
 
 PADDLE_CAPI_EXPORT extern bool PD_PredictorZeroCopyRun(
     const PD_AnalysisConfig* config, PD_ZeroCopyData* inputs, int in_size,
-    PD_ZeroCopyData* output, int** out_size);
+    PD_ZeroCopyData** output, int** out_size);
 
 // AnalysisConfig
 enum Precision { kFloat32 = 0, kInt8, kHalf };

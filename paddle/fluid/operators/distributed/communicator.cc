@@ -45,6 +45,9 @@ DEFINE_bool(communicator_merge_sparse_grad, true,
             "merge sparse gradient before sending");
 DEFINE_int32(communicator_merge_sparse_bucket, 2000,
              "number of threads for sparse var");
+DEFINE_bool(communicator_is_sgd_optimizer, true,
+            "gradient sent to the server is the sum of the gradients "
+            "calculated by each thread if optimizer is sgd");
 
 namespace paddle {
 namespace operators {
@@ -60,6 +63,75 @@ template <typename T>
 inline void VSUB(int n, const T *x, const T *y, T *z) {
   for (int i = 0; i < n; ++i) {
     z[i] = x[i] - y[i];
+  }
+}
+
+template <typename T, int MajorType = Eigen::RowMajor,
+          typename IndexType = Eigen::DenseIndex>
+using EigenVector = framework::EigenVector<T, MajorType, IndexType>;
+
+inline void MergeVars(const std::string &var_name,
+                      const std::vector<std::shared_ptr<Variable>> &vars,
+                      Scope *scope) {
+  PADDLE_ENFORCE(!vars.empty(), "should have value to merge!");
+  auto cpu_place = platform::CPUPlace();
+  auto &var0 = vars[0];
+  auto *out_var = scope->Var(var_name);
+  if (var0->IsType<framework::LoDTensor>()) {
+    auto dims = var0->Get<framework::LoDTensor>().dims();
+    VLOG(3) << "merge " << var_name << " LoDTensor dims " << dims;
+
+    // init output tensor
+    auto *out_t = out_var->GetMutable<framework::LoDTensor>();
+    out_t->mutable_data<float>(dims, cpu_place);
+
+    // check the input dims
+    for (auto &var : vars) {
+      auto &var_t = var->Get<framework::LoDTensor>();
+      PADDLE_ENFORCE_EQ(var_t.dims(), dims, "should have the same dims");
+    }
+
+    // set output tensor to 0.
+    auto cpu_ctx = paddle::platform::CPUDeviceContext();
+    math::SetConstant<paddle::platform::CPUDeviceContext, float>
+        constant_functor;
+    constant_functor(cpu_ctx, out_t, static_cast<float>(0));
+
+    // sum all vars to out
+    auto result = EigenVector<float>::Flatten(*out_t);
+    for (auto &var : vars) {
+      auto &in_t = var->Get<framework::LoDTensor>();
+      auto in = EigenVector<float>::Flatten(in_t);
+      result.device(*cpu_ctx.eigen_device()) = result + in;
+    }
+    if (!FLAGS_communicator_is_sgd_optimizer) {
+      result.device(*cpu_ctx.eigen_device()) =
+          result / static_cast<float>(vars.size());
+    }
+  } else if (var0->IsType<framework::SelectedRows>()) {
+    auto &slr0 = var0->Get<framework::SelectedRows>();
+    auto *out_slr = out_var->GetMutable<framework::SelectedRows>();
+    out_slr->mutable_rows()->clear();
+    out_slr->mutable_value()->mutable_data<float>({{}}, cpu_place);
+    std::vector<const paddle::framework::SelectedRows *> inputs;
+    inputs.reserve(vars.size());
+    for (auto &var : vars) {
+      inputs.push_back(&var->Get<framework::SelectedRows>());
+    }
+    auto dev_ctx = paddle::platform::CPUDeviceContext();
+    if (FLAGS_communicator_is_sgd_optimizer) {
+      math::scatter::MergeAdd<paddle::platform::CPUDeviceContext, float>
+          merge_add;
+      merge_add(dev_ctx, inputs, out_slr);
+    } else {
+      math::scatter::MergeAverage<paddle::platform::CPUDeviceContext, float>
+          merge_average;
+      merge_average(dev_ctx, inputs, out_slr);
+    }
+    VLOG(3) << "merge " << var_name << " SelectedRows height: " << slr0.height()
+            << " dims: " << slr0.value().dims();
+  } else {
+    PADDLE_THROW("unsupported var type!");
   }
 }
 
@@ -89,6 +161,8 @@ void AsyncCommunicator::InitImpl(const RpcCtxMap &send_varname_to_ctx,
   VLOG(0) << "communicator_fake_rpc: " << FLAGS_communicator_fake_rpc;
   VLOG(0) << "communicator_merge_sparse_grad: "
           << FLAGS_communicator_merge_sparse_grad;
+  VLOG(0) << "communicator_is_sgd_optimizer: "
+          << FLAGS_communicator_is_sgd_optimizer;
 
   if (send_varname_to_ctx.size() == 0) {
     VLOG(0) << "nothing need to be send, will not start send_thread";

@@ -89,7 +89,6 @@ void ParameterSend<T>::operator()(const RpcContext &rpc_ctx,
 
   auto *send_var = scope.FindVar(rpc_ctx.var_name);
 
-  VLOG(0) << "parameter send:" << send_var;
   if (send_var->IsType<framework::LoDTensor>()) {
     size_t out_num = rpc_ctx.splited_var_names.size();
     if (out_num > 1) {
@@ -140,8 +139,12 @@ void ParameterSend<T>::operator()(const RpcContext &rpc_ctx,
     auto abs_sections = ToAbsoluteSection(rpc_ctx.height_sections);
 
     auto &send_rows = send_slr.rows();
-    VLOG(0) << "parameter send:" << send_rows.size();
-    PADDLE_ENFORCE_GT(send_rows.size(), 0, "In parameter send function, SelectedRows can't be empty. If you set use_double_buffer = true in reader, you can try to turn it false.");
+    if (send_rows.empty()) {
+      LOG(WARNING) << "WARNING: The variable sent to pserver is empty, which "
+                      "may cause an unknown error. Please check the state of "
+                      "use_double_buffer in pyreader async mode, you need to "
+                      "turn it false.";
+    }
     std::vector<std::vector<size_t>> outs_rows_idx;
     std::vector<std::vector<size_t>> outs_dense_idx;
 

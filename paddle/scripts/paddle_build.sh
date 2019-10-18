@@ -301,7 +301,6 @@ function build_base() {
         make clean
     fi
 
-    make -j ${parallel_number}
     make install -j ${parallel_number}
 }
 
@@ -327,7 +326,6 @@ EOF
     if [[ "$ENABLE_MAKE_CLEAN" != "OFF" ]]; then
         make clean
     fi
-    make -j 8
     make install -j 8
 }
 
@@ -620,18 +618,14 @@ function card_test() {
         done
         if [ ${TESTING_DEBUG_MODE:-OFF} == "ON" ] ; then
             if [[ $cardnumber == $CUDA_DEVICE_COUNT ]]; then
-                echo "ctest -I $i,,$NUM_PROC -R \"($testcases)\" -V &"
                 ctest -I $i,,$NUM_PROC -R "($testcases)" -V &
             else
-                echo "env CUDA_VISIBLE_DEVICES=$cuda_list ctest -I $i,,$NUM_PROC -R \"($testcases)\" &"
                 env CUDA_VISIBLE_DEVICES=$cuda_list ctest -I $i,,$NUM_PROC -R "($testcases)" -V &
             fi
         else
             if [[ $cardnumber == $CUDA_DEVICE_COUNT ]]; then
-                echo "ctest -I $i,,$NUM_PROC -R \"($testcases)\" --output-on-failure &"
                 ctest -I $i,,$NUM_PROC -R "($testcases)" --output-on-failure &
             else
-                echo "env CUDA_VISIBLE_DEVICES=$cuda_list ctest -I $i,,$NUM_PROC -R \"($testcases)\" --output-on-failure &"
                 env CUDA_VISIBLE_DEVICES=$cuda_list ctest -I $i,,$NUM_PROC -R "($testcases)" --output-on-failure &
             fi
         fi
@@ -910,7 +904,7 @@ EOF
         xz-utils tk-dev libffi-dev liblzma-dev
     RUN mkdir -p /root/python_build/ && wget -q https://www.sqlite.org/2018/sqlite-autoconf-3250300.tar.gz && \
         tar -zxf sqlite-autoconf-3250300.tar.gz && cd sqlite-autoconf-3250300 && \
-        ./configure -prefix=/usr/local && make -j8 && make install && cd ../ && rm sqlite-autoconf-3250300.tar.gz && \
+        ./configure -prefix=/usr/local && make install -j8 && cd ../ && rm sqlite-autoconf-3250300.tar.gz && \
         wget -q https://www.python.org/ftp/python/3.6.0/Python-3.6.0.tgz && \
         tar -xzf Python-3.6.0.tgz && cd Python-3.6.0 && \
         CFLAGS="-Wformat" ./configure --prefix=/usr/local/ --enable-shared > /dev/null && \

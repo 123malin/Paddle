@@ -21,7 +21,7 @@ limitations under the License. */
 #include <string>
 #include <utility>
 #include <vector>
-#include "paddle/fluid/framework/kv_maps.h"
+#include "paddle/fluid/framework/fleet/kv_maps.h"
 #include "paddle/fluid/framework/mixed_vector.h"
 #include "paddle/fluid/framework/op_registry.h"
 #include "paddle/fluid/operators/math/sampler.h"
@@ -40,7 +40,6 @@ class TDMSamplerKernel : public framework::OpKernel<T> {
  public:
   void Compute(const framework::ExecutionContext &context) const override {
     auto *input_var = context.InputVar("Input");
-    auto *travel_var = context.InputVar("Travel");
     auto *layer_var = context.InputVar("Layer");
 
     auto neg_samples_num_vec =
@@ -51,7 +50,10 @@ class TDMSamplerKernel : public framework::OpKernel<T> {
     // get all tensor
     auto &input_tensor = input_var->Get<framework::LoDTensor>();
     // auto &travel_lod_tensor = travel_var->Get<framework::LoDTensor>();
-    UUMAP *travel_info = KV_MAPS::GetInstance()->get_data();
+    std::shared_ptr<framework::UUMAP> travel_info = framework::KV_MAPS::GetInstance()->get_data();
+    for (auto ite = travel_info->begin(); ite != travel_info->end(); ite++) {
+      VLOG(1) << ite->first << " " << ite->second[0];
+    }
     auto &layer_lod_tensor = layer_var->Get<framework::LoDTensor>();
 
     // get dimension
@@ -82,16 +84,15 @@ class TDMSamplerKernel : public framework::OpKernel<T> {
     mask_tensor->Resize(ddim);
 
     // get all data
-    auto *input_data = input_tensor.data<uint64_t>();
+    auto *input_data = input_tensor.data<int64_t>();
     // int *travel_data = const_cast<int *>(travel_lod_tensor.data<int>());
-    uint64_t *layer_data =
-        const_cast<uint64_t *>(layer_lod_tensor.data<uint64_t>());
+    auto *layer_data = layer_lod_tensor.data<int64_t>();
 
-    uint64_t zero = 0;
-    uint64_t one = 1;
-    std::vector<uint64_t> output_vec(total_sample_nums, zero);
-    std::vector<uint64_t> label_vec(total_sample_nums, zero);
-    std::vector<uint64_t> mask_vec(total_sample_nums, one);
+    int64_t zero = 0;
+    int64_t one = 1;
+    std::vector<int64_t> output_vec(total_sample_nums, zero);
+    std::vector<int64_t> label_vec(total_sample_nums, zero);
+    std::vector<int64_t> mask_vec(total_sample_nums, one);
 
     VLOG(2) << "End get input & output data";
     // generate uniform sampler
@@ -110,7 +111,7 @@ class TDMSamplerKernel : public framework::OpKernel<T> {
       // find leaf node travel path
       auto input_id = input_data[i];
       VLOG(1) << "TDM: input id: " << input_id;
-      std::vector<uint64_t> travel_data = travel_info->at(input_id);
+      std::vector<int64_t> travel_data = travel_info->at(input_id);
       // nce sample, layer by layer
       int offset = 0;
       for (int layer_idx = 0; layer_idx < layer_nums; ++layer_idx) {
@@ -129,7 +130,7 @@ class TDMSamplerKernel : public framework::OpKernel<T> {
             "check neg_samples_num_list.",
             layer_idx, node_nums, sample_num);
 
-        uint64_t positive_node_id = travel_data[layer_idx];
+        int64_t positive_node_id = travel_data[layer_idx];
 
         if (positive_node_id == 0) {
           // skip padding
@@ -154,7 +155,7 @@ class TDMSamplerKernel : public framework::OpKernel<T> {
 
         // If output positive, add itself
         if (output_positive_flag) {
-          output_vec[i * sample_res_length + offset] = positive_node_id;
+          output_vec[i * sample_res_length + offset] = static_cast<int64_t>(positive_node_id);
           label_vec[i * sample_res_length + offset] = 1;
           mask_vec[i * sample_res_length + offset] = 1;
           VLOG(1) << "TDM: node id: " << positive_node_id << " Res append  "
@@ -182,7 +183,7 @@ class TDMSamplerKernel : public framework::OpKernel<T> {
               layer_data[layer_offset_lod[layer_idx] + sample_res];
           label_vec[i * sample_res_length + offset] = 0;
           mask_vec[i * sample_res_length + offset] = 1;
-          VLOG(1) << "TDM: node id: " << travel_data[start_offset + layer_idx]
+          VLOG(1) << "TDM: node id: " << positive_node_id
                   << " Res append negitive "
                   << output_vec[i * sample_res_length + offset]
                   << " Label append negitive "
@@ -195,13 +196,13 @@ class TDMSamplerKernel : public framework::OpKernel<T> {
       }    // end one input nce
     }      // end all input nce
 
-    auto *output_data = out_tensor->mutable_data<uint64_t>(context.GetPlace());
-    auto *label_data = label_tensor->mutable_data<uint64_t>(context.GetPlace());
-    auto *mask_data = mask_tensor->mutable_data<uint64_t>(context.GetPlace());
+    auto *output_data = out_tensor->mutable_data<int64_t>(context.GetPlace());
+    auto *label_data = label_tensor->mutable_data<int64_t>(context.GetPlace());
+    auto *mask_data = mask_tensor->mutable_data<int64_t>(context.GetPlace());
 
-    memcpy(output_data, &output_vec[0], sizeof(uint64_t) * total_sample_nums);
-    memcpy(label_data, &label_vec[0], sizeof(uint64_t) * total_sample_nums);
-    memcpy(mask_data, &mask_vec[0], sizeof(uint64_t) * total_sample_nums);
+    memcpy(output_data, &output_vec[0], sizeof(int64_t) * total_sample_nums);
+    memcpy(label_data, &label_vec[0], sizeof(int64_t) * total_sample_nums);
+    memcpy(mask_data, &mask_vec[0], sizeof(int64_t) * total_sample_nums);
 
     for (int layer_index = 0; layer_index < layer_nums; layer_index++) {
       delete sampler_vec[layer_index];

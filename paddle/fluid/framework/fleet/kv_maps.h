@@ -18,16 +18,18 @@ limitations under the License. */
 #include <string>
 #include <unordered_map>
 #include <utility>
+#include <glog/logging.h>
 #include <vector>
+#include "paddle/fluid/platform/enforce.h"
 
 namespace paddle {
 namespace framework {
 
-using UUMAP = std::unordered_map<uint64_t, std::vector<uint64_t>>;
+typedef std::unordered_map<int64_t, std::vector<int64_t>> UUMAP;
 
 class KV_MAPS {
  public:
-  KV_MAPS(){};
+  KV_MAPS(){ data_ = std::make_shared<UUMAP>(); };
 
   static std::shared_ptr<KV_MAPS> GetInstance() {
     if (NULL == s_instance_) {
@@ -36,37 +38,50 @@ class KV_MAPS {
     return s_instance_;
   }
 
-  static void InitInstance(std::string filename) {
+  static void InitInstance(const std::string& filename) {
     if (s_instance_.get() == nullptr) {
+      VLOG(0) << "kv maps init";
       s_instance_.reset(new KV_MAPS());
       s_instance_->InitImpl(filename);
     }
   }
 
-  void InitImpl(std::string filename) {
-    if (is_initialized_ == false) return;
-    data_.clear();
-    std::ifstream fin(filename);
-    uint64_t size, dimensions, feasign;
+  void InitImpl(const std::string& filename) {
+    if (is_initialized_ == true) return;
+    VLOG(1) << "start init implementation!";
+    data_->clear();
+    VLOG(1) << "filename: " << filename;
+    std::ifstream fin(filename.c_str());
+    PADDLE_ENFORCE(fin.good(), "Can not open %s.", filename.c_str());
+    int size, dimensions, feasign;
+    VLOG(1) << "begin to read file";
     fin >> size >> dimensions;
-    std::vector<uint64_t> feasign_values;
+    VLOG(1) << "size: " << size << "dimensions: " << dimensions;
+    std::vector<int64_t> feasign_values;
     feasign_values.resize(dimensions);
-    for (uint64_t i = 0; i < size; i++) {
+    for (int64_t i = 0; i < size; i++) {
+      std::stringstream ss;
       fin >> feasign;
-      for (uint64_t j = 0; j < dimensions; j++) fin >> feasign_values[j];
+      ss << "feasign: " << feasign << "feasign_value: [";
+      for (int64_t j = 0; j < dimensions; j++) {
+        fin >> feasign_values[j];
+        ss << feasign_values[j] << " ";
+      }
+      ss << "]\n";
+      VLOG(1) << ss.str();
+      data_->insert(
+          std::pair<int64_t, std::vector<int64_t>>(feasign, feasign_values));
     }
-    data->insert(
-        std::pair<uint64_t, std::vector<uint64_t>>(feasign, feasign_values));
     is_initialized_ = true;
   }
 
-  UUMAP* get_data() { return data_; }
+  std::shared_ptr<UUMAP> get_data() { return data_; }
 
  protected:
   static bool is_initialized_;
   static std::shared_ptr<KV_MAPS> s_instance_;
   std::shared_ptr<UUMAP> data_;
-}
+};
 
 }  // namespace framework
 }  // namespace paddle

@@ -12,8 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "paddle/fluid/framework/kv_maps.h"
+#include "paddle/fluid/framework/fleet/kv_maps.h"
 #include <memory>
 
+namespace paddle {
+namespace framework {
 std::shared_ptr<KV_MAPS> KV_MAPS::s_instance_ = NULL;
 bool KV_MAPS::is_initialized_ = false;
+}  // end namespace framework
+}  // end paddle

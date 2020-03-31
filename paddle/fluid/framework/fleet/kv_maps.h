@@ -13,6 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License. */
 
 #pragma once
+#include <glog/logging.h>
 #include <fstream>
 #include <memory>
 #include <string>
@@ -29,7 +30,7 @@ typedef std::unordered_map<int64_t, std::vector<int64_t>> UUMAP;
 
 class KV_MAPS {
  public:
-  KV_MAPS(){ data_ = std::make_shared<UUMAP>(); };
+  KV_MAPS() { data_ = std::make_shared<UUMAP>(); };
 
   static std::shared_ptr<KV_MAPS> GetInstance() {
     if (NULL == s_instance_) {

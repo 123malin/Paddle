@@ -17,6 +17,7 @@ limitations under the License. */
 #include <gflags/gflags.h>
 #include <cmath>
 #include <fstream>
+#include <memory>
 #include <set>
 #include <string>
 #include <utility>
@@ -50,7 +51,8 @@ class TDMSamplerKernel : public framework::OpKernel<T> {
     // get all tensor
     auto &input_tensor = input_var->Get<framework::LoDTensor>();
     // auto &travel_lod_tensor = travel_var->Get<framework::LoDTensor>();
-    std::shared_ptr<framework::UUMAP> travel_info = framework::KV_MAPS::GetInstance()->get_data();
+    std::shared_ptr<framework::UUMAP> travel_info =
+        framework::KV_MAPS::GetInstance()->get_data();
     for (auto ite = travel_info->begin(); ite != travel_info->end(); ite++) {
       VLOG(1) << ite->first << " " << ite->second[0];
     }
@@ -155,7 +157,8 @@ class TDMSamplerKernel : public framework::OpKernel<T> {
 
         // If output positive, add itself
         if (output_positive_flag) {
-          output_vec[i * sample_res_length + offset] = static_cast<int64_t>(positive_node_id);
+          output_vec[i * sample_res_length + offset] =
+              static_cast<int64_t>(positive_node_id);
           label_vec[i * sample_res_length + offset] = 1;
           mask_vec[i * sample_res_length + offset] = 1;
           VLOG(1) << "TDM: node id: " << positive_node_id << " Res append  "
